@@ -7,7 +7,7 @@ Pipeline:
   1. Query DB → build data config for each adviser
   2. Call Claude API → generate personalised narratives
   3. Render PDF → 12-page adviser report
-  4. Upload → SharePoint (TODO)
+  4. Upload → Google Drive
 
 Usage:
     # Single adviser (testing)
@@ -20,9 +20,10 @@ Usage:
     python run_pipeline.py --all
 
 Environment variables:
-    DB_HOST, DB_USER, DB_PASSWORD, DB_NAME  — MySQL connection
-    ANTHROPIC_API_KEY                        — Claude API for narratives
-    SHAREPOINT_CLIENT_ID, etc.              — SharePoint upload (TODO)
+    DB_HOST, DB_USER, DB_PASSWORD, DB_NAME    — MySQL connection
+    ANTHROPIC_API_KEY                          — Claude API for narratives
+    GOOGLE_SERVICE_ACCOUNT_JSON               — Google service account key (JSON string)
+    GOOGLE_DRIVE_FOLDER_ID                    — Target Google Drive folder ID
 """
 
 import argparse
@@ -99,6 +100,15 @@ def run_single(user_id, month, year, output_dir="output", conn=None, api_key=Non
 
     print(f"  ✅ {adviser_name}: {pdf_path} ({size_kb:.0f} KB, {elapsed:.1f}s)")
 
+    # Upload to Google Drive if credentials are available
+    drive_result = None
+    if os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") and os.getenv("GOOGLE_DRIVE_FOLDER_ID"):
+        try:
+            from google_drive_upload import upload_report
+            drive_result = upload_report(pdf_path, adviser_name, month, year)
+        except Exception as e:
+            print(f"  ⚠️  Google Drive upload failed for {adviser_name}: {e}")
+
     return {
         "user_id": user_id,
         "name": adviser_name,
@@ -107,6 +117,7 @@ def run_single(user_id, month, year, output_dir="output", conn=None, api_key=Non
         "size_kb": size_kb,
         "elapsed": elapsed,
         "success": True,
+        "drive_result": drive_result,
     }
 
 
