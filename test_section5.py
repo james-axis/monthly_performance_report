@@ -263,9 +263,14 @@ def draw_section5(output_path):
     # Footer
     c.setFont("Helvetica", 8)
     c.setFillColor(colors.HexColor(GREY_TEXT))
-    c.drawCentredString(W / 2, 18 * mm, f"SLG CRM Intelligence Report  |  Page 5 of {cfg.TOTAL_PAGES}")
+    c.drawCentredString(W / 2, 18 * mm, f"SLG | Axis CRM Intelligence | Page 5 of {cfg.TOTAL_PAGES} | Version 1.0.0")
     
     # ═══════════════════════ PAGE 2 ═══════════════════════
+    if not APPS[PAGE1_ROWS:]:
+        c.save()
+        if os.path.exists(chart_path):
+            os.remove(chart_path)
+        return output_path
     c.showPage()
     
     
@@ -289,7 +294,7 @@ def draw_section5(output_path):
     # Footer
     c.setFont("Helvetica", 8)
     c.setFillColor(colors.HexColor(GREY_TEXT))
-    c.drawCentredString(W / 2, 18 * mm, f"SLG CRM Intelligence Report  |  Page 6 of {cfg.TOTAL_PAGES}")
+    c.drawCentredString(W / 2, 18 * mm, f"SLG | Axis CRM Intelligence | Page 6 of {cfg.TOTAL_PAGES} | Version 1.0.0")
     
     c.save()
     if os.path.exists(chart_path):

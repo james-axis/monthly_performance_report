@@ -25,10 +25,12 @@ GREY_TEXT = "#717680"
 BODY_TEXT = "#535862"
 
 
-def draw_header(c, page_num=12):
+def draw_header(c, page_num=None):
+    if page_num is None:
+        page_num = 12 - (0 if getattr(cfg, 'HAS_PAGE6', True) else 1)
     c.setFont("Helvetica", 8)
     c.setFillColor(colors.HexColor(GREY_TEXT))
-    c.drawCentredString(W/2, 18*mm, f"SLG CRM Intelligence Report  |  Page {page_num} of {cfg.TOTAL_PAGES}")
+    c.drawCentredString(W/2, 18*mm, f"SLG CRM Intelligence Report  |  Page {page_num} of {cfg.TOTAL_PAGES} | Version 1.0.0")
 
 
 def draw_crm_note(c, y):
@@ -177,11 +179,11 @@ def draw_milestone_banner(c, y):
 
 
 def build_section12():
-    output = "/home/claude/adviser-monthly-reports/output/section12_sample.pdf"
+    output = "./output/section12_sample.pdf"
     os.makedirs(os.path.dirname(output), exist_ok=True)
 
     c = canvas.Canvas(output, pagesize=A4)
-    draw_header(c, page_num=12)
+    draw_header(c, page_num=12 - (0 if getattr(cfg, 'HAS_PAGE6', True) else 1))
 
     y = H - 28 * mm
 

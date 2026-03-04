@@ -100,7 +100,7 @@ def build_histogram(output_path, adviser_conv, median, network_avg):
 
     # Adviser marker with arrow
     if adviser_bin is not None:
-        ax.annotate(f"(#2 of 85)",
+        ax.annotate(f"(#{cfg.ADVISER_RANK} of {cfg.TOTAL_PRACTICES})",
                     xy=(adv_x, counts[adviser_bin]),
                     xytext=(adv_x + 1.5, counts[adviser_bin] + 5),
                     fontsize=8, fontweight="bold", color="#181D27",
@@ -110,7 +110,7 @@ def build_histogram(output_path, adviser_conv, median, network_avg):
     ax.set_xticklabels([b.replace("-", "–") for b in bins], fontsize=7.5)
     ax.set_xlabel("New Lead to Completed Rate (%)", fontsize=9)
     ax.set_ylabel("Number of Practices", fontsize=9)
-    ax.set_title("Where You Sit – New Lead to Completed Rate Across 85 Active Practices",
+    ax.set_title(f"Where You Sit – New Lead to Completed Rate Across {cfg.TOTAL_PRACTICES} Active Practices",
                  fontsize=10.5, fontweight="bold", color=NAVY, pad=15)
     ax.tick_params(axis="both", labelsize=8)
     ax.grid(axis="y", alpha=0.15)
@@ -206,7 +206,7 @@ def draw_section3(output_path):
     # "Your Percentile Ranking Across 85 Practices" subtitle
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(colors.HexColor(BLUE_TEXT))
-    c.drawCentredString(W / 2, y, "Your Percentile Ranking Across 85 Practices")
+    c.drawCentredString(W / 2, y, f"Your Percentile Ranking Across {cfg.TOTAL_PRACTICES} Practices")
     y -= 12 * mm
 
     # Percentile bar
@@ -296,10 +296,17 @@ def draw_section3(output_path):
     # Bottom narrative
     bottom_style = ParagraphStyle("bottom", fontName="Helvetica-Oblique", fontSize=10,
                                    leading=14, textColor=colors.HexColor(BODY_TEXT))
+    if ADVISER_RANK == 1:
+        position_text = f"You sit at the very top of the network – no other practice converts at a higher rate."
+    elif ADVISER_RANK <= 5:
+        position_text = (f"Your position at {ADVISER_CONV}% puts you in rare company – "
+                         f"only {ADVISER_RANK - 1} other practice{'s' if ADVISER_RANK > 2 else ''} convert at a higher rate.")
+    else:
+        position_text = f"Your position at {ADVISER_CONV}% puts you in the top {100 - PERCENTILE}% of the network."
     bottom = Paragraph(
-        "The distribution above shows where all 85 practices sit. The majority of practices "
-        "are converting below 20%. Your position at 36.5% puts you in rare company – only one "
-        "other practice converts at a higher rate, and they do it on significantly fewer leads.",
+        f"The distribution above shows where all {TOTAL_PRACTICES} practices sit. The majority of "
+        f"practices are converting below 20%. {position_text} "
+        f"You rank #{ADVISER_RANK} out of {TOTAL_PRACTICES} active practices.",
         bottom_style)
     pw, ph = bottom.wrap(USABLE_W, 100)
     bottom.drawOn(c, MARGIN_L, y - ph)
@@ -307,7 +314,7 @@ def draw_section3(output_path):
     # Footer
     c.setFont("Helvetica", 8)
     c.setFillColor(colors.HexColor(GREY_TEXT))
-    c.drawCentredString(W / 2, 18 * mm, f"SLG CRM Intelligence Report  |  Page 3 of {cfg.TOTAL_PAGES}")
+    c.drawCentredString(W / 2, 18 * mm, f"SLG | Axis CRM Intelligence | Page 3 of {cfg.TOTAL_PAGES} | Version 1.0.0")
 
     c.save()
     if os.path.exists(chart_path):

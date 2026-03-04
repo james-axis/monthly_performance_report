@@ -148,7 +148,7 @@ def draw_section11(output_path):
     # Footer
     c.setFont("Helvetica", 8)
     c.setFillColor(colors.HexColor(GREY_TEXT))
-    c.drawCentredString(W / 2, 18 * mm, f"SLG CRM Intelligence Report  |  Page 11 of {cfg.TOTAL_PAGES}")
+    c.drawCentredString(W / 2, 18 * mm, f"SLG | Axis CRM Intelligence | Page {11 - (0 if getattr(cfg, 'HAS_PAGE6', True) else 1)} of {cfg.TOTAL_PAGES} | Version 1.0.0")
     
     c.save()
     os.remove(chart_path)
