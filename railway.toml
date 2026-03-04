@@ -3,8 +3,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python run_pipeline.py --all"
-restartPolicyType = "ON_FAILURE"
+startCommand = "python slack_server.py"
+restartPolicyType = "ALWAYS"
 
 [cron]
 schedule = "0 20 1 * *"
