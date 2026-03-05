@@ -94,31 +94,19 @@ def draw_section11(output_path):
     narr_style = ParagraphStyle("narr", fontName="Helvetica", fontSize=10,
                                  leading=14, textColor=colors.HexColor(BODY_TEXT))
     
-    # Data: quoted 61.2%, unquoted 9.5%, multiplier 6.4x
-    p1 = Paragraph(
-        "<b>Quoted leads convert at 61.2%. Unquoted leads convert at 9.5%.</b> "
-        "That\u2019s a 6.4x difference. Once a client has a quote in hand, more than "
-        "half of them go through to application. Getting to the quote is the hard "
-        "part \u2013 and you\u2019re clearly good at it, given your volume this month.",
-        narr_style
-    )
+    p1 = Paragraph(cfg.PREDICTOR_NARRATIVE_1, narr_style)
     pw, ph = p1.wrap(UW, 60)
     p1.drawOn(c, ML, y - ph)
     y -= ph + 5 * mm
-    
+
     # Narrative paragraph 2 - stale quoted leads
-    # 29 stale quoted leads (6-month window), total quote value $63,758
-    # Est premium = total_qv * conversion = $63,758 * 61.2% = $39,000
     stale_count = cfg.STALE_QUOTED_COUNT
     est_premium = cfg.STALE_EST_PREMIUM
-    
-    p2 = Paragraph(
-        f"You currently have {stale_count} quoted leads where the last recorded action was more than "
-        f"5 days ago. Given your 61.2% conversion rate on quoted leads, that pool alone "
-        f"represents an estimated <b><font color=\"{GREEN}\">${est_premium:,.0f} in potential "
-        f"premium</font></b> based on your own averages.",
-        narr_style
+
+    narr2_text = cfg.PREDICTOR_NARRATIVE_2_TEMPLATE.format(
+        stale_count=stale_count, est_premium=est_premium
     )
+    p2 = Paragraph(narr2_text, narr_style)
     pw2, ph2 = p2.wrap(UW, 60)
     p2.drawOn(c, ML, y - ph2)
     y -= ph2 + 10 * mm
@@ -135,13 +123,7 @@ def draw_section11(output_path):
     # Closing italic paragraph
     italic_style = ParagraphStyle("italic_close", fontName="Helvetica-Oblique", fontSize=10,
                                    leading=14, textColor=colors.HexColor(BODY_TEXT))
-    closing = Paragraph(
-        "The pattern is consistent: leads you\u2019ve engaged deeply (3+ calls, quoted with "
-        "follow-up) are converting at high rates and generating strong premiums. The "
-        "lighter-touch segments still have value \u2013 but your data shows they respond to "
-        "the same approach that\u2019s already working on your best leads.",
-        italic_style
-    )
+    closing = Paragraph(cfg.PREDICTOR_CLOSING, italic_style)
     cw, ch = closing.wrap(UW, 60)
     closing.drawOn(c, ML, y - ch)
     

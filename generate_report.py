@@ -40,7 +40,7 @@ def build_report(user_id: int, month: int, year: int, output_path: str = None):
         ("Section 9:  Quoted Pipeline",           "test_section9",  "draw_section9",  "section9_sample.pdf"),
         ("Section 10: What Works",                "test_section10", "draw_section10", "section10_sample.pdf"),
         ("Section 11: Strongest Predictor",       "test_section11", "draw_section11", "section11_sample.pdf"),
-        ("Section 12: Summary + Milestone",       "test_section12", "build_section12", "section12_sample.pdf"),
+        ("Section 12: Summary + Milestone",       "test_section12", "draw_section12", "section12_sample.pdf"),
     ]
 
     for label, module_name, func_name, filename in builders:
@@ -48,10 +48,7 @@ def build_report(user_id: int, month: int, year: int, output_path: str = None):
         mod = __import__(module_name)
         fn = getattr(mod, func_name)
         out = os.path.join(OUTPUT_DIR, filename)
-        if func_name == "build_section12":
-            fn()  # section 12 uses hardcoded output path internally
-        else:
-            fn(out)
+        fn(out)
         section_pdfs.append(out)
 
     print("\n  Merging sections...")

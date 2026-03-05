@@ -34,83 +34,76 @@ GREEN_TEXT = "#181D27"  # navy for adviser values
 BLUE_TEXT = "#414651"
 
 # Data from config
-ADVISER_CONV = cfg.ADVISER_CONV
-ADVISER_LEADS = cfg.ADVISER_LEADS
+ADVISER_PREMIUM_12M = cfg.ADVISER_PREMIUM_12M
 ADVISER_RANK = cfg.ADVISER_RANK
 TOTAL_PRACTICES = cfg.TOTAL_PRACTICES
 PERCENTILE = cfg.PERCENTILE
-NETWORK_AVG = cfg.NETWORK_AVG
-MEDIAN = cfg.MEDIAN
-TOP_QUARTILE = cfg.TOP_QUARTILE
+NETWORK_AVG_PREM = cfg.NETWORK_AVG_PREM
+MEDIAN_PREM = cfg.MEDIAN_PREM
+TOP_QUARTILE_PREM = cfg.TOP_QUARTILE_PREM
+PREM_Q1 = cfg.PREM_Q1
+PREM_Q2 = cfg.PREM_Q2
+PREM_Q3 = cfg.PREM_Q3
 
 # Histogram data from config
 HIST_DATA = cfg.HIST_DATA
 
 
-def build_histogram(output_path, adviser_conv, median, network_avg):
-    """Histogram showing where all practices sit."""
+def build_histogram(output_path, adviser_prem, median_prem, network_avg_prem):
+    """Histogram showing where all practices sit by 12-month premium submitted."""
     bins = list(HIST_DATA.keys())
     counts = list(HIST_DATA.values())
     x = np.arange(len(bins))
 
-    # Find which bin the adviser falls in
-    adviser_bin = None
-    for i, b in enumerate(bins):
-        if b.endswith("+"):
-            lo = int(b.replace("+", ""))
-            if adviser_conv >= lo:
-                adviser_bin = i
-        else:
-            lo, hi = map(int, b.split("-"))
-            if lo <= adviser_conv < hi:
-                adviser_bin = i
+    # Bin edges in $k for lookup (matching build_config bin_edges_k)
+    bin_edges_k = [(0, 50), (50, 100), (100, 150), (150, 200), (200, 250), (250, 300)]
 
+    def find_adviser_bin(prem_dollars):
+        prem_k = prem_dollars / 1000
+        for i, (lo, hi) in enumerate(bin_edges_k):
+            if lo <= prem_k < hi:
+                return i
+        return len(bins) - 1  # $300k+
+
+    def val_to_x(prem_dollars):
+        """Convert dollar amount to fractional x position for vertical lines."""
+        prem_k = prem_dollars / 1000
+        for i, (lo, hi) in enumerate(bin_edges_k):
+            if lo <= prem_k < hi:
+                return i + (prem_k - lo) / (hi - lo)
+        return len(bins) - 1  # $300k+
+
+    adviser_bin = find_adviser_bin(adviser_prem)
     bar_colors = [BLUE_BAR] * len(bins)
-    if adviser_bin is not None:
-        bar_colors[adviser_bin] = GREEN_BAR
+    bar_colors[adviser_bin] = GREEN_BAR
 
     fig, ax = plt.subplots(figsize=(8, 3.8))
-    bars = ax.bar(x, counts, color=bar_colors, width=0.85, zorder=3)
+    ax.bar(x, counts, color=bar_colors, width=0.85, zorder=3)
 
-    # Median and avg lines
-    # Map percentages to bin positions
-    def pct_to_x(pct):
-        for i, b in enumerate(bins):
-            if b.endswith("+"):
-                lo = int(b.replace("+", ""))
-                if pct >= lo:
-                    return i + (pct - lo) / 5 * 0.5
-            else:
-                lo, hi = map(int, b.split("-"))
-                if lo <= pct < hi:
-                    return i + (pct - lo) / (hi - lo)
-        return len(bins) - 1
-
-    med_x = pct_to_x(median)
-    avg_x = pct_to_x(network_avg)
-    adv_x = pct_to_x(adviser_conv)
+    med_x = val_to_x(median_prem)
+    avg_x = val_to_x(network_avg_prem)
+    adv_x = val_to_x(adviser_prem)
 
     ax.axvline(x=med_x, color="#A4A7AE", linestyle="--", linewidth=2.0, alpha=0.9, zorder=4)
-    ax.text(med_x, max(counts) + 0.8, f"Median\n{median:.0f}%",
+    ax.text(med_x, max(counts) + 0.8, f"Median\n${median_prem/1000:.0f}k",
             ha="center", fontsize=8, color="#A4A7AE", fontweight="bold")
 
     ax.axvline(x=avg_x, color="#A4A7AE", linestyle="-.", linewidth=2.0, alpha=0.9, zorder=4)
-    ax.text(avg_x + 0.3, max(counts) + 0.8, f"Network Avg\n{network_avg:.1f}%",
+    ax.text(avg_x + 0.3, max(counts) + 0.8, f"Network Avg\n${network_avg_prem/1000:.0f}k",
             ha="left", fontsize=8, color="#A4A7AE", fontweight="bold")
 
     # Adviser marker with arrow
-    if adviser_bin is not None:
-        ax.annotate(f"(#{cfg.ADVISER_RANK} of {cfg.TOTAL_PRACTICES})",
-                    xy=(adv_x, counts[adviser_bin]),
-                    xytext=(adv_x + 1.5, counts[adviser_bin] + 5),
-                    fontsize=8, fontweight="bold", color="#181D27",
-                    arrowprops=dict(arrowstyle="->", color="#181D27", lw=1.5))
+    ax.annotate(f"You: #{cfg.ADVISER_RANK} of {cfg.TOTAL_PRACTICES}",
+                xy=(adv_x, counts[adviser_bin]),
+                xytext=(adv_x + 1.2, counts[adviser_bin] + 4),
+                fontsize=8, fontweight="bold", color="#181D27",
+                arrowprops=dict(arrowstyle="->", color="#181D27", lw=1.5))
 
     ax.set_xticks(x)
-    ax.set_xticklabels([b.replace("-", "–") for b in bins], fontsize=7.5)
-    ax.set_xlabel("New Lead to Completed Rate (%)", fontsize=9)
+    ax.set_xticklabels(bins, fontsize=7.5, rotation=15, ha="right")
+    ax.set_xlabel("12-Month Premium Submitted", fontsize=9)
     ax.set_ylabel("Number of Practices", fontsize=9)
-    ax.set_title(f"Where You Sit – New Lead to Completed Rate Across {cfg.TOTAL_PRACTICES} Active Practices",
+    ax.set_title(f"Where You Sit – 12-Month Premium Submitted Across {cfg.TOTAL_PRACTICES} Active Practices",
                  fontsize=10.5, fontweight="bold", color=NAVY, pad=15)
     ax.tick_params(axis="both", labelsize=8)
     ax.grid(axis="y", alpha=0.15)
@@ -143,10 +136,12 @@ def draw_percentile_bar(c, x, y, w, h, adviser_pct, breakpoints, labels):
         c.setFillColor(colors.HexColor("#535862"))
         c.drawCentredString(sx + seg_w / 2, y + h / 2 - 3, labels[i])
 
-    # Breakpoint labels below
+    # Breakpoint labels below — quartile premium thresholds
     c.setFont("Helvetica", 7)
     c.setFillColor(colors.HexColor(GREY_TEXT))
-    bp_labels = ["0–8%", "6%", "13%", "21%", "48%+"]
+    def fmt_k(v):
+        return f"${v // 1000}k" if v >= 1000 else ""
+    bp_labels = ["$0", fmt_k(PREM_Q1), fmt_k(PREM_Q2), fmt_k(PREM_Q3), "Top"]
     positions = [x, x + seg_w, x + 2 * seg_w, x + 3 * seg_w, x + w]
     for i, (pos, lbl) in enumerate(zip(positions, bp_labels)):
         if i == 0:
@@ -196,7 +191,7 @@ def draw_section3(output_path):
     intro_style = ParagraphStyle("intro", fontName="Helvetica", fontSize=10,
                                   leading=14, textColor=colors.HexColor(BODY_TEXT))
     intro = Paragraph(
-        "Here's how your numbers stack up against the full SLG network. "
+        "Here's how your 12-month premium submitted stacks up against the full SLG network. "
         f"This comparison covers all {cfg.TOTAL_PRACTICES} active practices from {cfg.BENCH_PERIOD}. "
         "All other practices are shown anonymously.", intro_style)
     pw, ph = intro.wrap(USABLE_W, 100)
@@ -213,8 +208,8 @@ def draw_section3(output_path):
     bar_w = USABLE_W * 0.75
     bar_x = MARGIN_L + 5 * mm
     bar_h = 10 * mm
-    draw_percentile_bar(c, bar_x, y, bar_w, bar_h, ADVISER_CONV,
-                        [8, 13, 21, 48],
+    draw_percentile_bar(c, bar_x, y, bar_w, bar_h, ADVISER_PREMIUM_12M,
+                        [PREM_Q1, PREM_Q2, PREM_Q3, None],
                         ["Bottom 25%", "25th–50th", "50th–75th", "Top 25%"])
 
     y -= 10 * mm
@@ -242,8 +237,7 @@ def draw_section3(output_path):
 
     # Data rows
     rows = [
-        ("New Lead to Completed", f"{ADVISER_CONV}%", f"{NETWORK_AVG}%", f"{MEDIAN:.0f}%", f"{TOP_QUARTILE:.0f}%+"),
-        ("Lead Volume", str(ADVISER_LEADS), "40", "—", "—"),
+        ("12-Month Premium", f"${ADVISER_PREMIUM_12M:,}", f"${NETWORK_AVG_PREM:,}", f"${MEDIAN_PREM:,}", f"${TOP_QUARTILE_PREM:,}+"),
         ("Network Rank", f"#{ADVISER_RANK} of {TOTAL_PRACTICES}", "—", f"#{TOTAL_PRACTICES // 2}", f"Top {TOTAL_PRACTICES // 4}"),
         ("Percentile", f"{PERCENTILE}th", "—", "50th", "75th+"),
     ]
@@ -274,19 +268,19 @@ def draw_section3(output_path):
     y -= 8 * mm
     narr_style = ParagraphStyle("narr", fontName="Helvetica", fontSize=10,
                                  leading=14, textColor=colors.HexColor(BODY_TEXT))
+    prem_vs_median = (ADVISER_PREMIUM_12M / MEDIAN_PREM) if MEDIAN_PREM > 0 else 0
     narr = Paragraph(
-        f"<b>You rank #{ADVISER_RANK} out of {TOTAL_PRACTICES} active practices for new lead to completed rate</b> "
-        f"and you're doing it at high volume ({ADVISER_LEADS} leads). Most practices with high "
-        f"conversion rates are operating on much smaller lead counts. The median practice in "
-        f"the network converts at {MEDIAN:.0f}% – you're converting at nearly "
-        f"{ADVISER_CONV / MEDIAN:.0f}x that rate.", narr_style)
+        f"<b>You rank #{ADVISER_RANK} out of {TOTAL_PRACTICES} active practices for 12-month premium submitted.</b> "
+        f"The median practice in the network submitted ${MEDIAN_PREM:,} over the same period – "
+        f"you submitted {prem_vs_median:.1f}x that amount. "
+        f"The network average is ${NETWORK_AVG_PREM:,}.", narr_style)
     pw, ph = narr.wrap(USABLE_W, 100)
     narr.drawOn(c, MARGIN_L, y - ph)
     y -= ph + 8 * mm
 
     # ── Histogram chart
     chart_path = output_path.replace(".pdf", "_hist.png")
-    build_histogram(chart_path, ADVISER_CONV, MEDIAN, NETWORK_AVG)
+    build_histogram(chart_path, ADVISER_PREMIUM_12M, MEDIAN_PREM, NETWORK_AVG_PREM)
 
     chart_h = 60 * mm
     c.drawImage(chart_path, MARGIN_L, y - chart_h, width=USABLE_W, height=chart_h,
@@ -297,15 +291,15 @@ def draw_section3(output_path):
     bottom_style = ParagraphStyle("bottom", fontName="Helvetica-Oblique", fontSize=10,
                                    leading=14, textColor=colors.HexColor(BODY_TEXT))
     if ADVISER_RANK == 1:
-        position_text = f"You sit at the very top of the network – no other practice converts at a higher rate."
+        position_text = "You sit at the very top of the network – no other practice submitted more premium over this period."
     elif ADVISER_RANK <= 5:
-        position_text = (f"Your position at {ADVISER_CONV}% puts you in rare company – "
-                         f"only {ADVISER_RANK - 1} other practice{'s' if ADVISER_RANK > 2 else ''} convert at a higher rate.")
+        position_text = (f"Your ${ADVISER_PREMIUM_12M:,} puts you in rare company – "
+                         f"only {ADVISER_RANK - 1} other practice{'s' if ADVISER_RANK > 2 else ''} submitted more premium.")
     else:
-        position_text = f"Your position at {ADVISER_CONV}% puts you in the top {100 - PERCENTILE}% of the network."
+        position_text = f"Your ${ADVISER_PREMIUM_12M:,} puts you in the top {100 - PERCENTILE}% of the network."
     bottom = Paragraph(
-        f"The distribution above shows where all {TOTAL_PRACTICES} practices sit. The majority of "
-        f"practices are converting below 20%. {position_text} "
+        f"The distribution above shows where all {TOTAL_PRACTICES} practices sit by 12-month premium submitted. "
+        f"{position_text} "
         f"You rank #{ADVISER_RANK} out of {TOTAL_PRACTICES} active practices.",
         bottom_style)
     pw, ph = bottom.wrap(USABLE_W, 100)

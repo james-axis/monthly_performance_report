@@ -19,6 +19,12 @@ from textwrap import dedent
 
 import mysql.connector
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass
+
 
 # ═══════════════════════════════════════════════════════════════════
 #  DB CONNECTION
@@ -29,7 +35,7 @@ def get_connection():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST", "prod-slife-crm-db-reporting.cjte8bbhwgp7.ap-southeast-2.rds.amazonaws.com"),
         user=os.getenv("DB_USER", ""),
-        password=os.getenv("DB_PASS", ""),
+        password=os.getenv("DB_PASSWORD", os.getenv("DB_PASS", "")),
         database=os.getenv("DB_NAME", "lifeinsurancepartners"),
         connect_timeout=30,
     )
@@ -138,52 +144,34 @@ def build_12month_performance(conn, user_id, month, year):
 
 
 def build_benchmarking(conn, user_id, month, year):
-    """Section 3: Network benchmarking — conversion rates across all practices.
-
-    Validated formula (matches Sonny's 36.5% for Rojas):
-        conversion = leads_with_at_least_1_app / (total_leads - fake/dup/deleted)
-    Where fake/dup/deleted = close_reason_id IN (70, 80, 98).
-    Window: 5-month rolling (report_month - 4 through report_month).
-    """
-    # 5-month window (e.g., Oct 2025 - Feb 2026 for a Feb report)
+    """Section 3: Network benchmarking — 12-month total premium submitted across all practices."""
+    # 12-month window ending at report month (same window as sections 1 & 2)
     end_dt = datetime(year, month, 1) + timedelta(days=32)
     end_dt = end_dt.replace(day=1)
-    start_dt = datetime(year, month, 1)
-    for _ in range(4):
-        start_dt = (start_dt - timedelta(days=1)).replace(day=1)
+    start_dt = datetime(year - 1, month, 1) + timedelta(days=32)
+    start_dt = start_dt.replace(day=1)
 
     start_str = start_dt.strftime("%Y-%m-%d")
     end_str = end_dt.strftime("%Y-%m-%d")
     bench_period = f"{calendar.month_name[start_dt.month]} {start_dt.year} to {calendar.month_name[month]} {year}"
 
-    # All practices conversion rates using validated formula:
-    # conversion = leads with any app / (total leads - fake/dup/deleted)
-    # close_reason_id 70=Fake, 80=Duplicate, 98=Deleted
+    # All active practices: 12-month total premium submitted
     all_practices = query(conn, """
-        SELECT t.user_id, t.valid_leads, t.leads_converted,
-               ROUND(t.leads_converted / NULLIF(t.valid_leads, 0) * 100, 1) as conversion
-        FROM (
-          SELECT l.user_id,
-                 COUNT(DISTINCT l.id)
-                   - SUM(COALESCE(l.close_reason_id, 0) IN (70, 80, 98)) as valid_leads,
-                 COUNT(DISTINCT CASE WHEN a.id IS NOT NULL THEN l.id END) as leads_converted
-          FROM leads_lead l
-          LEFT JOIN applications_application a ON a.lead_id = l.id
-          WHERE l.user_id IN (
+        SELECT a.adviser_id AS user_id, ROUND(SUM(a.premium)) AS total_prem
+        FROM applications_application a
+        WHERE a.submitted >= %s AND a.submitted < %s
+          AND a.adviser_id IN (
             SELECT DISTINCT ugu.user_id
             FROM account_usergroup_users ugu
             JOIN account_usergroup ug ON ug.id=ugu.usergroup_id AND ug.real=1 AND ug.is_active=1
             JOIN auth_user au ON au.id=ugu.user_id AND au.is_active=1
             WHERE ugu.user_id NOT IN (88, 118, 172)
           )
-          AND l.created >= %s AND l.created < %s
-          GROUP BY l.user_id
-        ) t
-        WHERE t.valid_leads >= 1
-        ORDER BY ROUND(t.leads_converted / NULLIF(t.valid_leads, 0) * 100, 1) DESC
+        GROUP BY a.adviser_id
+        ORDER BY total_prem DESC
     """, (start_str, end_str))
 
-    # Total active practices (including those with 0 leads)
+    # Total active practices (including those with 0 submissions)
     total_row = query(conn, """
         SELECT COUNT(DISTINCT ugu.user_id) as total_practices
         FROM account_usergroup_users ugu
@@ -193,60 +181,59 @@ def build_benchmarking(conn, user_id, month, year):
     """)[0]
     total_practices = total_row["total_practices"]
 
-    # Build conversion rates list (include 0% for zero-lead practices)
-    conv_rates = []
-    adviser_conv = 0.0
-    adviser_leads = 0
+    premiums = []
+    adviser_prem = 0
     for p in all_practices:
-        rate = float(p["conversion"] or 0)
-        rate = min(rate, 100.0)  # cap at 100
-        conv_rates.append(rate)
+        prem = int(p["total_prem"] or 0)
+        premiums.append(prem)
         if p["user_id"] == user_id:
-            adviser_conv = rate
-            adviser_leads = p["valid_leads"]
+            adviser_prem = prem
 
-    # Add zero-lead practices
-    zero_count = total_practices - len(conv_rates)
-    conv_rates.extend([0.0] * max(zero_count, 0))
+    # Add zero-premium practices
+    zero_count = total_practices - len(premiums)
+    premiums.extend([0] * max(zero_count, 0))
+    premiums.sort(reverse=True)
 
-    conv_rates.sort(reverse=True)
-    n = len(conv_rates)
-
-    # Rank and percentile
-    rank = sum(1 for c in conv_rates if c > adviser_conv) + 1
+    n = len(premiums)
+    rank = sum(1 for p in premiums if p > adviser_prem) + 1
     percentile = round((1 - rank / n) * 100) if n > 0 else 0
 
-    # Stats
-    avg_conv = round(statistics.mean(conv_rates), 1) if conv_rates else 0
-    med_conv = round(statistics.median(conv_rates), 1) if conv_rates else 0
-    sorted_asc = sorted(conv_rates)
-    top_q = sorted_asc[int(n * 0.75)] if n > 0 else 0
+    avg_prem = round(statistics.mean(premiums)) if premiums else 0
+    med_prem = round(statistics.median(premiums)) if premiums else 0
+    sorted_asc = sorted(premiums)
+    top_q_prem = sorted_asc[int(n * 0.75)] if n > 0 else 0
 
-    # Histogram bins
-    bin_edges = [(0, 5), (5, 10), (10, 15), (15, 20), (20, 25), (25, 30),
-                 (30, 35), (35, 40), (40, 45), (45, 50)]
-    bin_labels = ["0-5", "5-10", "10-15", "15-20", "20-25", "25-30",
-                  "30-35", "35-40", "40-45", "45-50", "50+"]
+    # Quartile thresholds for percentile bar labels ($)
+    prem_q1 = sorted_asc[int(n * 0.25)] if n > 0 else 0
+    prem_q2 = med_prem
+    prem_q3 = top_q_prem
+
+    # Histogram bins in $k ranges
+    bin_edges_k = [(0, 50), (50, 100), (100, 150), (150, 200), (200, 250), (250, 300)]
+    bin_labels = ["$0–50k", "$50–100k", "$100–150k", "$150–200k", "$200–250k", "$250–300k", "$300k+"]
     hist_data = {lbl: 0 for lbl in bin_labels}
-    for c in conv_rates:
+    for p in premiums:
+        p_k = p / 1000
         placed = False
-        for (lo, hi), lbl in zip(bin_edges, bin_labels[:-1]):
-            if lo <= c < hi:
+        for (lo, hi), lbl in zip(bin_edges_k, bin_labels[:-1]):
+            if lo <= p_k < hi:
                 hist_data[lbl] += 1
                 placed = True
                 break
         if not placed:
-            hist_data["50+"] += 1
+            hist_data["$300k+"] += 1
 
     return {
-        "ADVISER_CONV": adviser_conv,
-        "ADVISER_LEADS": adviser_leads,
+        "ADVISER_PREMIUM_12M": adviser_prem,
         "ADVISER_RANK": rank,
         "TOTAL_PRACTICES": n,
         "PERCENTILE": percentile,
-        "NETWORK_AVG": avg_conv,
-        "MEDIAN": med_conv,
-        "TOP_QUARTILE": top_q,
+        "NETWORK_AVG_PREM": avg_prem,
+        "MEDIAN_PREM": med_prem,
+        "TOP_QUARTILE_PREM": top_q_prem,
+        "PREM_Q1": prem_q1,
+        "PREM_Q2": prem_q2,
+        "PREM_Q3": prem_q3,
         "BENCH_PERIOD": bench_period,
         "HIST_DATA": hist_data,
     }
@@ -275,37 +262,71 @@ def build_referral_partners(conn, user_id, month, year):
         WHERE l.user_id = %s
           AND l.created >= %s AND l.created < %s
         GROUP BY ls.name, l.tags_cache
-        HAVING apps >= 2
+        HAVING leads >= 2
         ORDER BY leads DESC
-        LIMIT 8
+        LIMIT 25
     """, (user_id, start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")))
 
-    partners = []
+    # First pass: count how often each potential group-prefix appears (to detect real groups)
+    prefix_counts = {}
     for r in rows:
-        # Parse contact name from tags_cache (e.g. "newhaven group - Adriana Sinopoli")
+        tag = r["contact_tag"] or ""
+        if " - " in tag:
+            prefix = tag.split(" - ", 1)[0].strip()
+            prefix_counts[prefix] = prefix_counts.get(prefix, 0) + 1
+
+    partners = []   # individual rows for the breakdown table
+    groups = {}     # group_name -> aggregated totals
+
+    for r in rows:
         tag = r["contact_tag"] or ""
         source = r["source_name"] or "Other"
+        leads = r["leads"]
+        apps_count = int(r["apps"] or 0)
+        prem = int(r["total_prem"] or 0)
 
-        # Build display name
+        # Determine group and display name
         if " - " in tag:
-            parts = tag.split(" - ", 1)
-            contact = parts[1].strip()
-            short_name = f"{source}\n({contact.split()[0]} {contact.split()[-1][0] if len(contact.split()) > 1 else ''})"
-            full_name = f"{source} \u2013 {contact}"
+            prefix = tag.split(" - ", 1)[0].strip()
+            individual = tag.split(" - ", 1)[1].strip()
+            # Only treat as a group if the prefix appears 2+ times
+            if prefix_counts.get(prefix, 0) >= 2:
+                group_name = prefix.title()
+            else:
+                # Treat whole tag as a standalone (e.g. "Referral from Sandra - Marlun Finance")
+                group_name = tag.strip().title()
+                individual = tag.strip()
+        elif tag:
+            group_name = tag.strip().title()
+            individual = tag.strip()
         else:
-            short_name = source
-            full_name = source
+            group_name = source.title()
+            individual = source
 
         partners.append({
-            "name": short_name,
-            "full": full_name,
-            "leads": r["leads"],
-            "apps": r["apps"],
-            "prem": int(r["total_prem"] or 0),
+            "name": individual,
+            "group": group_name,
+            "leads": leads,
+            "apps": apps_count,
+            "prem": prem,
             "conv": int(r["conv"] or 0),
         })
 
-    return {"PARTNERS": partners}
+        if group_name not in groups:
+            groups[group_name] = {"name": group_name, "leads": 0, "apps": 0, "prem": 0}
+        groups[group_name]["leads"] += leads
+        groups[group_name]["apps"] += apps_count
+        groups[group_name]["prem"] += prem
+
+    # Build group list with calculated conversion
+    group_list = []
+    for g in groups.values():
+        g["conv"] = round(g["apps"] / g["leads"] * 100) if g["leads"] > 0 else 0
+        group_list.append(g)
+    group_list.sort(key=lambda x: -x["leads"])
+    partners.sort(key=lambda x: -x["leads"])
+
+    return {"PARTNERS": partners, "PARTNER_GROUPS": group_list}
 
 
 def build_insurers_and_submissions(conn, user_id, month, year):
@@ -404,15 +425,25 @@ def build_speed_to_contact(conn, user_id, month, year):
     rows = query(conn, """
         SELECT
           CASE
-            WHEN l.calls_made = 0 THEN '0 calls'
-            WHEN l.calls_made = 1 THEN '1 call'
-            WHEN l.calls_made = 2 THEN '2 calls'
+            WHEN COALESCE(cc.consultant_calls, 0) = 0 THEN '0 calls'
+            WHEN COALESCE(cc.consultant_calls, 0) = 1 THEN '1 call'
+            WHEN COALESCE(cc.consultant_calls, 0) = 2 THEN '2 calls'
             ELSE '3+ calls'
           END as bucket,
           COUNT(DISTINCT l.id) as leads,
           COUNT(DISTINCT CASE WHEN l.status = 5 THEN l.id END) as converted,
           ROUND(AVG(CASE WHEN l.status = 5 THEN a.app_value END)) as avg_case
         FROM leads_lead l
+        LEFT JOIN (
+          SELECT la.object_id, COUNT(*) as consultant_calls
+          FROM leads_leadaction la
+          WHERE la.object_type = 'lead' AND la.action_type = 'call'
+            AND la.deleted = 0
+            AND la.user_id IN (
+              SELECT user_id FROM account_userrole_users WHERE userrole_id = 2
+            )
+          GROUP BY la.object_id
+        ) cc ON cc.object_id = l.id
         LEFT JOIN applications_application a ON a.lead_id = l.id
         WHERE l.user_id = %s
           AND l.created >= %s AND l.created < %s
@@ -424,6 +455,7 @@ def build_speed_to_contact(conn, user_id, month, year):
     conv_rates = []
     avg_values = []
     total_leads = 0
+    bucket_lead_counts = []
 
     for b in buckets:
         row = next((r for r in rows if r["bucket"] == b), None)
@@ -434,9 +466,15 @@ def build_speed_to_contact(conn, user_id, month, year):
             conv_rates.append(rate)
             avg_values.append(int(row["avg_case"] or 0))
             total_leads += leads
+            bucket_lead_counts.append(leads)
         else:
             conv_rates.append(0)
             avg_values.append(0)
+            bucket_lead_counts.append(0)
+
+    # Detect face-to-face advisers: <5% of leads have any phone calls made by a consultant
+    leads_with_calls = sum(bucket_lead_counts[1:])  # 1 call, 2 calls, 3+ calls
+    is_face_to_face = (total_leads > 10 and leads_with_calls / total_leads < 0.05)
 
     # Quoted vs unquoted conversion
     quoted_row = query(conn, """
@@ -459,6 +497,7 @@ def build_speed_to_contact(conn, user_id, month, year):
         "STC_PERIOD": "8 months",
         "QUOTED_CONV_RATE_STC": float(quoted_row["quoted_conv"] or 0),
         "UNQUOTED_CONV_RATE_STC": float(quoted_row["unquoted_conv"] or 0),
+        "IS_FACE_TO_FACE": is_face_to_face,
     }
 
 
@@ -481,7 +520,8 @@ def build_completion_forecast(conn, user_id, month, year):
     for a in all_apps:
         if a["commenced"] and a["submitted"]:
             days = (a["commenced"] - a["submitted"]).days
-            days_list.append(days)
+            if days >= 0:  # exclude retroactive/data-entry anomalies
+                days_list.append(days)
             if days <= 7:
                 week_buckets["Week 1"] += 1
             elif days <= 14:
@@ -596,19 +636,29 @@ def build_conversion_drivers(conn, user_id, month, year):
     start_str = start_dt.strftime("%Y-%m-%d")
     end_str = end_dt.strftime("%Y-%m-%d")
 
-    # Conversion by call count (12-month)
+    # Conversion by call count (12-month) — consultant-role calls only
     call_rows = query(conn, """
         SELECT
           CASE
-            WHEN l.calls_made = 0 THEN '0 calls'
-            WHEN l.calls_made = 1 THEN '1 call'
-            WHEN l.calls_made = 2 THEN '2 calls'
+            WHEN COALESCE(cc.consultant_calls, 0) = 0 THEN '0 calls'
+            WHEN COALESCE(cc.consultant_calls, 0) = 1 THEN '1 call'
+            WHEN COALESCE(cc.consultant_calls, 0) = 2 THEN '2 calls'
             ELSE '3+ calls'
           END as bucket,
           COUNT(DISTINCT l.id) as leads,
           COUNT(DISTINCT CASE WHEN l.status = 5 THEN l.id END) as converted,
           ROUND(AVG(CASE WHEN l.status = 5 THEN a.app_value END)) as avg_case
         FROM leads_lead l
+        LEFT JOIN (
+          SELECT la.object_id, COUNT(*) as consultant_calls
+          FROM leads_leadaction la
+          WHERE la.object_type = 'lead' AND la.action_type = 'call'
+            AND la.deleted = 0
+            AND la.user_id IN (
+              SELECT user_id FROM account_userrole_users WHERE userrole_id = 2
+            )
+          GROUP BY la.object_id
+        ) cc ON cc.object_id = l.id
         LEFT JOIN applications_application a ON a.lead_id = l.id
         WHERE l.user_id = %s AND l.created >= %s AND l.created < %s
         GROUP BY bucket
@@ -654,29 +704,50 @@ def build_conversion_drivers(conn, user_id, month, year):
     quoted_conv = float(qv["q_conv"] or 0)
     unquoted_conv = float(qv["uq_conv"] or 0)
 
-    call_mult = f"{conv_by_calls[-1] / conv_by_calls[0]:.1f}x" if conv_by_calls[0] > 0 else "N/A"
+    call_mult = (f"{conv_by_calls[-1] / conv_by_calls[0]:.1f}x"
+                 if conv_by_calls[0] > 0 and conv_by_calls[-1] > 0 else "N/A")
     quote_mult = f"{quoted_conv / unquoted_conv:.1f}x" if unquoted_conv > 0 else "N/A"
 
-    # Current pipeline segments for section 11
-    # Leads with 0 calls (active, not converted)
+    # Current pipeline segments for section 11 — consultant-role calls only
     seg_0 = query(conn, """
-        SELECT COUNT(*) as cnt FROM leads_lead
-        WHERE user_id = %s AND calls_made = 0 AND status NOT IN (5, 6, 7)
-          AND close_reason_id IS NULL
+        SELECT COUNT(*) as cnt FROM leads_lead l
+        WHERE l.user_id = %s AND l.status NOT IN (5, 6, 7)
+          AND l.close_reason_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM leads_leadaction la
+            WHERE la.object_id = l.id AND la.object_type = 'lead'
+              AND la.action_type = 'call' AND la.deleted = 0
+              AND la.user_id IN (
+                SELECT user_id FROM account_userrole_users WHERE userrole_id = 2
+              )
+          )
     """, (user_id,))[0]["cnt"]
 
-    # Leads with 3+ calls (active)
     seg_3plus = query(conn, """
-        SELECT COUNT(*) as cnt FROM leads_lead
-        WHERE user_id = %s AND calls_made >= 3 AND status NOT IN (5, 6, 7)
-          AND close_reason_id IS NULL
+        SELECT COUNT(*) as cnt FROM leads_lead l
+        WHERE l.user_id = %s AND l.status NOT IN (5, 6, 7)
+          AND l.close_reason_id IS NULL
+          AND (
+            SELECT COUNT(*) FROM leads_leadaction la
+            WHERE la.object_id = l.id AND la.object_type = 'lead'
+              AND la.action_type = 'call' AND la.deleted = 0
+              AND la.user_id IN (
+                SELECT user_id FROM account_userrole_users WHERE userrole_id = 2
+              )
+          ) >= 3
     """, (user_id,))[0]["cnt"]
 
-    # Quoted leads (status=3, with follow-up = has calls)
     quoted_followed = query(conn, """
         SELECT COUNT(*) as cnt FROM leads_lead l
         WHERE l.user_id = %s AND l.status = 3 AND l.close_reason_id IS NULL
-          AND l.calls_made > 0
+          AND EXISTS (
+            SELECT 1 FROM leads_leadaction la
+            WHERE la.object_id = l.id AND la.object_type = 'lead'
+              AND la.action_type = 'call' AND la.deleted = 0
+              AND la.user_id IN (
+                SELECT user_id FROM account_userrole_users WHERE userrole_id = 2
+              )
+          )
     """, (user_id,))[0]["cnt"]
 
     # Quoted leads awaiting follow-up (status=3, stale > 5 days)
@@ -839,16 +910,16 @@ def write_config(config, output_path="report_config.py"):
             "KPI_TOTAL_SUB_LABEL", "KPI_APPS_LABEL", "KPI_AVG_LABEL",
             "EXEC_NARRATIVE", "EXEC_DRIVING"],
         "SECTION 3: BENCHMARKING": [
-            "ADVISER_CONV", "ADVISER_LEADS", "ADVISER_RANK", "TOTAL_PRACTICES",
-            "PERCENTILE", "NETWORK_AVG", "MEDIAN", "TOP_QUARTILE",
-            "BENCH_PERIOD", "HIST_DATA"],
-        "SECTION 4: REFERRAL PARTNERS": ["PARTNERS"],
+            "ADVISER_PREMIUM_12M", "ADVISER_RANK", "TOTAL_PRACTICES",
+            "PERCENTILE", "NETWORK_AVG_PREM", "MEDIAN_PREM", "TOP_QUARTILE_PREM",
+            "PREM_Q1", "PREM_Q2", "PREM_Q3", "BENCH_PERIOD", "HIST_DATA"],
+        "SECTION 4: REFERRAL PARTNERS": ["PARTNERS", "PARTNER_GROUPS"],
         "SECTION 5/6: INSURERS + SUBMISSIONS": [
             "INSURERS", "APPS", "SUBMISSIONS_FOOTNOTE"],
         "SECTION 7: SPEED-TO-CONTACT": [
             "CALL_BUCKETS", "CONV_RATES", "AVG_CASE_VALUES", "TOTAL_LEADS_STC",
             "STC_PERIOD", "QUOTED_CONV_RATE_STC", "UNQUOTED_CONV_RATE_STC",
-            "STC_NARRATIVE"],
+            "STC_NARRATIVE", "IS_FACE_TO_FACE"],
         "SECTION 8: COMPLETION FORECAST": [
             "COMPLETION_BUCKETS", "PER_PERIOD_PCT", "CUMULATIVE_PCT",
             "TOTAL_COMPLETED", "TOTAL_SUBMITTED_HIST", "COMPLETION_RATE",

@@ -40,8 +40,12 @@ GREEN_TEXT_DARK = "#181D27"  # navy for highlighted text
 MONTHS_DATA = cfg.MONTHS_DATA
 
 
-def build_trend_chart(output_path, months_data, current_month=2, current_year=2026):
+def build_trend_chart(output_path, months_data, current_month=None, current_year=None):
     """Build the 12-month trend chart matching Sonny's exact style."""
+    if current_month is None:
+        current_month = cfg.REPORT_MONTH
+    if current_year is None:
+        current_year = cfg.REPORT_YEAR
     labels = []
     prems = []
     apps = []
@@ -85,10 +89,10 @@ def build_trend_chart(output_path, months_data, current_month=2, current_year=20
     ax2.plot(current_idx, apps[current_idx], marker="*", markersize=11,
              color=GOLD_LINE, zorder=7)
 
-    # Label select bars with value (high months: show $XK above bar)
-    # Sonny labels: $64K on Sep, ~$78K on Dec, $101K on Feb
+    # Label high-value bars
+    label_threshold = max(prems) * 0.65 if prems else 0
     for i, p in enumerate(prems):
-        if p >= 60000:
+        if p >= label_threshold:
             ax1.text(i, p / 1000 + 2, f"${p/1000:.0f}K",
                      ha="center", va="bottom", fontsize=8, fontweight="bold",
                      color=NAVY)
@@ -99,11 +103,11 @@ def build_trend_chart(output_path, months_data, current_month=2, current_year=20
 
     ax1.set_xticks(x)
     ax1.set_xticklabels(labels, fontsize=8)
-    ax1.set_ylim(0, 120)
+    ax1.set_ylim(0, max(prems) / 1000 * 1.45 if prems else 10)
     ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:.0f}K"))
     ax1.tick_params(axis="y", labelsize=8)
 
-    ax2.set_ylim(0, 35)
+    ax2.set_ylim(0, max(apps) * 2.8 if apps else 10)
     ax2.tick_params(axis="y", labelsize=8, colors=GOLD_LINE)
 
     ax1.set_title("12-Month Submitted Premium & Application Volume",
@@ -147,7 +151,7 @@ def draw_section2(output_path):
 
     # Data rows (Mar 2025 - Jan 2026 normal, Feb 2026 highlighted green)
     for i, d in enumerate(MONTHS_DATA):
-        is_current = (d["m"] == 2 and d["y"] == 2026)
+        is_current = (d["m"] == cfg.REPORT_MONTH and d["y"] == cfg.REPORT_YEAR)
         row_y = y - row_h
 
         # Background

@@ -33,8 +33,8 @@ TOTAL_LEADS = cfg.TOTAL_LEADS_STC
 PERIOD = cfg.STC_PERIOD
 
 # Quoted vs unquoted insight (from DB)
-QUOTED_CONV = 60.8
-UNQUOTED_CONV = 7.0
+QUOTED_CONV = cfg.QUOTED_CONV_RATE_STC
+UNQUOTED_CONV = cfg.UNQUOTED_CONV_RATE_STC
 
 # Bar colors
 CONV_COLORS = ["#D5D7DA", "#717680", "#414651", "#252B37"]
@@ -67,7 +67,7 @@ def build_speed_chart(output_path):
     
     # ── Right: Avg Case Value by Call Activity ──
     bars2 = ax2.bar(x, AVG_CASE_VALUES, width=bar_w, color=CASE_COLORS, zorder=3, edgecolor="white", linewidth=0.5)
-    ax2.set_ylim(0, max(AVG_CASE_VALUES) * 1.2)
+    ax2.set_ylim(0, max(max(AVG_CASE_VALUES), 500) * 1.25)
     ax2.set_xticks(x)
     ax2.set_xticklabels(CALL_BUCKETS, fontsize=9)
     ax2.set_ylabel("Avg Case Value ($)", fontsize=9)
@@ -76,10 +76,11 @@ def build_speed_chart(output_path):
     ax2.set_axisbelow(True)
     for spine in ["top", "right"]:
         ax2.spines[spine].set_visible(False)
-    
+
     for bar, val in zip(bars2, AVG_CASE_VALUES):
+        label = f"${val:,}" if val > 0 else "—"
         ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 15,
-                 f"${val:,}", ha="center", va="bottom", fontsize=9, fontweight="bold", color=NAVY)
+                 label, ha="center", va="bottom", fontsize=9, fontweight="bold", color=NAVY)
     
     fig.suptitle(f"Speed-to-Contact Analysis ({TOTAL_LEADS} leads, {PERIOD})",
                  fontsize=12, fontweight="bold", color=NAVY, y=1.0)
@@ -92,8 +93,7 @@ def build_speed_chart(output_path):
 
 def draw_section7(output_path):
     c = canvas.Canvas(output_path, pagesize=A4)
-    
-    
+
     # Section heading
     y = H - 28 * mm
     c.setFont("Helvetica-Bold", 16)
@@ -104,7 +104,29 @@ def draw_section7(output_path):
     c.setStrokeColor(colors.HexColor("#E9EAEB"))
     c.setLineWidth(0.3)
     c.line(ML, y, W - MR, y)
-    
+
+    if getattr(cfg, "IS_FACE_TO_FACE", False):
+        y -= 20 * mm
+        # Badge box
+        box_h = 32 * mm
+        c.setFillColor(colors.HexColor("#F5F5F5"))
+        c.setStrokeColor(colors.HexColor("#D5D7DA"))
+        c.setLineWidth(0.5)
+        c.roundRect(ML, y - box_h, UW, box_h, 4, fill=1, stroke=1)
+        c.setFont("Helvetica-Bold", 14)
+        c.setFillColor(colors.HexColor(NAVY))
+        c.drawCentredString(W / 2, y - 14 * mm, "Face to Face Adviser")
+        c.setFont("Helvetica", 10)
+        c.setFillColor(colors.HexColor(BODY_TEXT))
+        c.drawCentredString(W / 2, y - 22 * mm,
+                            "Phone call speed-to-contact metrics are not applicable for face-to-face advisers.")
+        c.setFont("Helvetica", 8)
+        c.setFillColor(colors.HexColor(GREY_TEXT))
+        c.drawCentredString(W / 2, 18 * mm,
+                            f"SLG | Axis CRM Intelligence | Page {7 - (0 if getattr(cfg, 'HAS_PAGE6', True) else 1)} of {cfg.TOTAL_PAGES} | Version 1.0.0")
+        c.save()
+        return output_path
+
     # Subtitle
     y -= 6 * mm
     c.setFont("Helvetica", 10)
@@ -124,9 +146,9 @@ def draw_section7(output_path):
     # ── Narrative ──
     narr_style = ParagraphStyle("narr", fontName="Helvetica", fontSize=10,
                                  leading=14, textColor=colors.HexColor(BODY_TEXT))
-    narr_text = (
-        "<b>Each additional call attempt roughly doubles the conversion rate.</b> "
-        "Leads that reach the quote stage convert at 60.8% vs 7.0% for unquoted. "
+    narr_text = cfg.STC_NARRATIVE if cfg.STC_NARRATIVE else (
+        f"<b>Each additional call attempt increases the conversion rate.</b> "
+        f"Leads that reach the quote stage convert at {QUOTED_CONV}% vs {UNQUOTED_CONV}% for unquoted. "
         "Getting to a quote is the single strongest predictor of conversion."
     )
     narr = Paragraph(narr_text, narr_style)

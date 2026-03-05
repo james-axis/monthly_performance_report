@@ -48,13 +48,14 @@ def make_charts(out_path):
                 f"{rate}%", ha='center', va='bottom', fontsize=8.5,
                 fontweight='bold', color=NAVY)
     
-    ax1.annotate(cfg.CALL_MULTIPLIER, xy=(3, 69.8), xytext=(2.2, 85),
+    top_rate = max(rates) if rates else 0
+    ax1.annotate(cfg.CALL_MULTIPLIER, xy=(len(rates) - 1, top_rate), xytext=(len(rates) - 1.8, min(top_rate + 20, 100)),
                 fontsize=14, fontweight='bold', color=NAVY, ha='center')
     
     ax1.set_ylabel("Your Conversion Rate (%)", fontsize=8, color=GREY_TEXT)
     ax1.set_title("Your Conversion by Call Activity", fontsize=9.5,
                   fontweight='bold', color=NAVY, pad=10)
-    ax1.set_ylim(0, 108)
+    ax1.set_ylim(0, max(max(rates) * 1.4, 10) if rates else 10)
     ax1.yaxis.set_major_formatter(mticker.PercentFormatter())
     ax1.tick_params(axis='both', labelsize=7.5)
     ax1.spines['top'].set_visible(False)
@@ -77,13 +78,15 @@ def make_charts(out_path):
                 f"{rate}%", ha='center', va='bottom', fontsize=8.5,
                 fontweight='bold', color=NAVY)
     
-    ax2.annotate(cfg.QUOTE_MULTIPLIER, xy=(0.5, 55), xytext=(0.5, 50),
+    top_rate2 = max(rates2) if rates2 else 0
+    annot_y2 = min(top_rate2 * 0.65, top_rate2 - 10) if top_rate2 > 15 else top_rate2 + 5
+    ax2.annotate(cfg.QUOTE_MULTIPLIER, xy=(0.5, top_rate2 * 0.5), xytext=(0.5, annot_y2),
                 fontsize=14, fontweight='bold', color=NAVY, ha='center')
     
     ax2.set_ylabel("Your Conversion Rate (%)", fontsize=8, color=GREY_TEXT)
     ax2.set_title("Your Conversion: Quoted vs Unquoted", fontsize=9.5,
                   fontweight='bold', color=NAVY, pad=10)
-    ax2.set_ylim(0, 80)
+    ax2.set_ylim(0, max(max(rates2) * 1.5, 10) if rates2 else 10)
     ax2.yaxis.set_major_formatter(mticker.PercentFormatter())
     ax2.tick_params(axis='both', labelsize=7.5)
     ax2.spines['top'].set_visible(False)
@@ -101,12 +104,8 @@ def make_charts(out_path):
 
 
 def draw_section10(output_path):
-    chart_path = output_path.replace('.pdf', '_chart.png')
-    make_charts(chart_path)
-    
     c = canvas.Canvas(output_path, pagesize=A4)
-    
-    
+
     # Section heading
     y = H - 28 * mm
     c.setFont("Helvetica-Bold", 16)
@@ -117,7 +116,31 @@ def draw_section10(output_path):
     c.setStrokeColor(colors.HexColor("#E9EAEB"))
     c.setLineWidth(0.3)
     c.line(ML, y, W - MR, y)
-    
+
+    if getattr(cfg, "IS_FACE_TO_FACE", False):
+        y -= 20 * mm
+        box_h = 32 * mm
+        c.setFillColor(colors.HexColor("#F5F5F5"))
+        c.setStrokeColor(colors.HexColor("#D5D7DA"))
+        c.setLineWidth(0.5)
+        c.roundRect(ML, y - box_h, UW, box_h, 4, fill=1, stroke=1)
+        c.setFont("Helvetica-Bold", 14)
+        c.setFillColor(colors.HexColor(NAVY))
+        c.drawCentredString(W / 2, y - 14 * mm, "Face to Face Adviser")
+        c.setFont("Helvetica", 10)
+        c.setFillColor(colors.HexColor(BODY_TEXT))
+        c.drawCentredString(W / 2, y - 22 * mm,
+                            "Phone call conversion analysis is not applicable for face-to-face advisers.")
+        c.setFont("Helvetica", 8)
+        c.setFillColor(colors.HexColor(GREY_TEXT))
+        c.drawCentredString(W / 2, 18 * mm,
+                            f"SLG | Axis CRM Intelligence | Page {10 - (0 if getattr(cfg, 'HAS_PAGE6', True) else 1)} of {cfg.TOTAL_PAGES} | Version 1.0.0")
+        c.save()
+        return output_path
+
+    chart_path = output_path.replace('.pdf', '_chart.png')
+    make_charts(chart_path)
+
     # Subtitle
     y -= 6 * mm
     sub_style = ParagraphStyle("sub", fontName="Helvetica", fontSize=10,
@@ -158,12 +181,7 @@ def draw_section10(output_path):
     y -= nh + 6 * mm
     
     # Table data
-    TABLE_DATA = [
-        ["0 calls", "20.5%", "$844", "37"],
-        ["1 call", "46.6%", "$1,243", "\u2014"],
-        ["2 calls", "60.4%", "$876", "\u2014"],
-        ["3+ calls", "69.8%", "$1,266", "22"],
-    ]
+    TABLE_DATA = cfg.TABLE_DATA_10
     
     col_w = [UW * 0.22, UW * 0.22, UW * 0.28, UW * 0.28]
     hdr_h = 7.5 * mm
@@ -205,12 +223,14 @@ def draw_section10(output_path):
     # Closing insight
     close_style = ParagraphStyle("close", fontName="Helvetica", fontSize=10,
                                   leading=14, textColor=colors.HexColor(BODY_TEXT))
-    close = Paragraph(
-        "The 37 leads currently at zero calls represent the biggest shift available "
-        "in your pipeline. Based on your own numbers, moving even half of those into "
-        "the \u201c1 call\u201d column would more than double their expected conversion rate.",
-        close_style
+    untouched = cfg.UNTOUCHED_LEADS
+    untouched_conv = cfg.UNTOUCHED_CONV
+    close_text = (
+        f"The <b>{untouched} leads</b> currently at zero calls represent the biggest shift available "
+        f"in your pipeline. Based on your own numbers (current conversion: {untouched_conv}), moving even half of those into "
+        "the \u201c1 call\u201d column would significantly increase their expected conversion rate."
     )
+    close = Paragraph(close_text, close_style)
     cw, ch = close.wrap(UW, 50)
     close.drawOn(c, ML, y - ch)
     

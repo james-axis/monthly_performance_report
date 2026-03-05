@@ -54,7 +54,7 @@ def build_trend_chart_mini(output_path):
         labels.append(f"{calendar.month_abbr[d['m']]}\n'{str(d['y'])[2:]}")
         prems.append(d["prem"])
         apps.append(d["apps"])
-        bar_colors.append(CHART_DARK if (d["m"] == 2 and d["y"] == 2026) else CHART_BLUE)
+        bar_colors.append(CHART_DARK if (d["m"] == cfg.REPORT_MONTH and d["y"] == cfg.REPORT_YEAR) else CHART_BLUE)
 
     avg_prem = sum(prems) / len(prems)
     fig, ax1 = plt.subplots(figsize=(10, 3.8))
@@ -71,8 +71,9 @@ def build_trend_chart_mini(output_path):
     ax2.plot(current_idx, apps[current_idx], marker="*", markersize=12, color="white", zorder=6)
     ax2.plot(current_idx, apps[current_idx], marker="*", markersize=9, color=CHART_LIGHT, zorder=7)
 
+    label_threshold = max(prems) * 0.65 if prems else 0
     for i, p in enumerate(prems):
-        if p >= 60000:
+        if p >= label_threshold:
             ax1.text(i, p / 1000 + 2, f"${p/1000:.0f}K", ha="center", va="bottom",
                      fontsize=7.5, fontweight="bold", color="#181D27")
 
@@ -80,10 +81,10 @@ def build_trend_chart_mini(output_path):
     ax2.set_ylabel("Applications", fontsize=8, color=CHART_LIGHT, rotation=270, labelpad=12)
     ax1.set_xticks(x)
     ax1.set_xticklabels(labels, fontsize=7)
-    ax1.set_ylim(0, 120)
+    ax1.set_ylim(0, max(prems) / 1000 * 1.45 if prems else 10)
     ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:.0f}K"))
     ax1.tick_params(axis="y", labelsize=7)
-    ax2.set_ylim(0, 35)
+    ax2.set_ylim(0, max(apps) * 2.8 if apps else 10)
     ax2.tick_params(axis="y", labelsize=7, colors=CHART_LIGHT)
     ax1.set_title("12-Month Submitted Premium & Application Volume",
                   fontsize=10, fontweight="bold", color="#181D27", pad=8)
@@ -115,7 +116,7 @@ def draw_section1(output_path):
     y -= 18 * mm
     c.setFont("Helvetica-Bold", 26)
     c.setFillColor(colors.HexColor(NAVY))
-    c.drawString(MARGIN_L, y, "February 2026 Performance Report")
+    c.drawString(MARGIN_L, y, f"{cfg.REPORT_MONTH_NAME} {cfg.REPORT_YEAR} Performance Report")
 
     # Blue underline
     y -= 4 * mm
@@ -215,9 +216,13 @@ def draw_section1(output_path):
     pct_above = ((MONTHS_DATA[-1]["prem"] / avg) - 1) * 100
     avg_style = ParagraphStyle("avgtext", fontName="Helvetica-Oblique", fontSize=9.5, leading=13,
                                 textColor=colors.HexColor(BODY_TEXT))
+    if pct_above >= 0:
+        comparison = f"{pct_above:.0f}% above that average"
+    else:
+        comparison = f"{abs(pct_above):.0f}% below that average"
     avg_p = Paragraph(
-        f"12-month trailing average: ${avg:,.0f}/month. February is {pct_above:.0f}% "
-        f"above that average \u2013 more than double your typical month.", avg_style)
+        f"12-month trailing average: ${avg:,.0f}/month. "
+        f"{cfg.REPORT_MONTH_NAME} is {comparison}.", avg_style)
     aw, ah = avg_p.wrap(USABLE_W, 50)
     avg_p.drawOn(c, MARGIN_L, y - ah)
 

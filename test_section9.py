@@ -24,20 +24,8 @@ GREY_TEXT = "#717680"
 BODY_TEXT = "#535862"
 ALT_ROW = "#F5F5F5"
 
-# DB-validated pipeline data (status=3, quote_value>0, close_reason_id IS NULL, user 80)
-PIPELINE = [
-    {"client": "Keith Hamilton", "quoted": 10874, "source": "Nectar", "status": "Quoted, 1 call made"},
-    {"client": "Naomi Cao", "quoted": 10789, "source": "Nectar", "status": "SMS follow-up sent"},
-    {"client": "Danny Nedza", "quoted": 10564, "source": "Organic", "status": "Email follow-up"},
-    {"client": "Anthony Page", "quoted": 9321, "source": "Nectar", "status": "Appointment accepted"},
-    {"client": "Andrew Jennings", "quoted": 6916, "source": "Nectar", "status": "Quote sent, awaiting"},
-    {"client": "Jason Owen", "quoted": 6879, "source": "Partner referral", "status": "Quote sent Jan"},
-    {"client": "Lindy DoLambert", "quoted": 6146, "source": "Nectar", "status": "Email follow-up"},
-    {"client": "Andrew O'Callaghan", "quoted": 5877, "source": "Nectar", "status": "Email follow-up"},
-    {"client": "Rebecca Schiwy", "quoted": 5811, "source": "Newhaven Group", "status": "Estimates sent"},
-]
-
-TOTAL_PIPELINE = sum(p["quoted"] for p in PIPELINE)
+PIPELINE = cfg.PIPELINE
+TOTAL_PIPELINE = sum(p["quoted"] for p in PIPELINE if isinstance(p["quoted"], (int, float)))
 
 # Columns: Client (25%), Quoted (12%), Referral Partner (33%), Status (30%)
 COL_W = [UW * 0.25, UW * 0.12, UW * 0.33, UW * 0.30]
@@ -77,7 +65,7 @@ def draw_table_row(c, y, row, idx):
     
     vals = [
         row["client"],
-        f"${row['quoted']:,}",
+        f"${row['quoted']:,}" if row["quoted"] else "—",
         row["source"],
         row["status"],
     ]
@@ -109,31 +97,46 @@ def draw_section9(output_path):
     sub_style = ParagraphStyle("sub", fontName="Helvetica", fontSize=10,
                                 leading=13, textColor=colors.HexColor(BODY_TEXT))
     sub = Paragraph(
-        "Quoted leads with no application yet – these represent additional upside "
-        "beyond the $101K already submitted.",
+        f"Quoted leads with no application yet – these represent additional upside "
+        f"beyond the ${cfg.KPI_TOTAL_SUBMITTED_RAW:,} already submitted in {cfg.REPORT_MONTH_NAME}.",
         sub_style
     )
     sw, sh = sub.wrap(UW, 40)
     sub.drawOn(c, ML, y - sh)
     y -= sh + 8 * mm
     
-    # Table
-    y = draw_table_header(c, y)
-    
-    for idx, row in enumerate(PIPELINE):
-        y = draw_table_row(c, y, row, idx)
-    
-    # Total line
-    y -= 8 * mm
-    total_style = ParagraphStyle("total", fontName="Helvetica", fontSize=10,
-                                  leading=14, textColor=colors.HexColor(BODY_TEXT))
-    total_text = (
-        f"<b>Total top-{len(PIPELINE)} pipeline value: ${TOTAL_PIPELINE:,}.</b> "
-        "Converting even 2–3 of these in March sets up another strong month."
-    )
-    tp = Paragraph(total_text, total_style)
-    tw, th = tp.wrap(UW, 40)
-    tp.drawOn(c, ML, y - th)
+    if not PIPELINE:
+        no_data_style = ParagraphStyle("nd", fontName="Helvetica-Oblique", fontSize=10,
+                                        leading=14, textColor=colors.HexColor(BODY_TEXT))
+        nd = Paragraph("No quoted leads without an application found in the CRM.", no_data_style)
+        nw, nh = nd.wrap(UW, 30)
+        nd.drawOn(c, ML, y - nh)
+    else:
+        # Table
+        y = draw_table_header(c, y)
+
+        for idx, row in enumerate(PIPELINE):
+            y = draw_table_row(c, y, row, idx)
+
+        # Total line
+        y -= 8 * mm
+        import calendar as _cal
+        next_month_name = _cal.month_name[(cfg.REPORT_MONTH % 12) + 1]
+        total_style = ParagraphStyle("total", fontName="Helvetica", fontSize=10,
+                                      leading=14, textColor=colors.HexColor(BODY_TEXT))
+        if TOTAL_PIPELINE > 0:
+            total_text = (
+                f"<b>Total pipeline value ({len(PIPELINE)} leads): ${TOTAL_PIPELINE:,}.</b> "
+                f"Converting even 2–3 of these in {next_month_name} sets up another strong month."
+            )
+        else:
+            total_text = (
+                f"<b>{len(PIPELINE)} leads in quoted status</b> – quote values not yet entered in CRM. "
+                "Enter quote amounts to unlock pipeline value tracking."
+            )
+        tp = Paragraph(total_text, total_style)
+        tw, th = tp.wrap(UW, 40)
+        tp.drawOn(c, ML, y - th)
     
     # Footer
     c.setFont("Helvetica", 8)

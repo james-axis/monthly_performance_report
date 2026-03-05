@@ -124,31 +124,38 @@ def draw_section8(output_path):
     y -= 6 * mm
     c.setFont("Helvetica", 10)
     c.setFillColor(colors.HexColor(BODY_TEXT))
-    c.drawString(ML, y, f"Based on your historical pattern across {TOTAL_COMPLETED} completed applications (June 2025 onward):")
-    
-    # Chart
-    y -= 5 * mm
-    chart_path = output_path.replace(".pdf", "_chart.png")
-    build_completion_chart(chart_path)
-    
-    chart_h = 62 * mm
-    c.drawImage(chart_path, ML - 2 * mm, y - chart_h, width=UW + 4 * mm, height=chart_h,
-                preserveAspectRatio=True, anchor="nw")
-    y -= chart_h + 6 * mm
-    
-    # Historical summary line (italic)
-    hist_style = ParagraphStyle("hist", fontName="Helvetica-Oblique", fontSize=10,
-                                 leading=13, textColor=colors.HexColor(BODY_TEXT))
-    hist_text = (
-        f"Historical completion rate: {COMPLETION_RATE}% "
-        f"({TOTAL_COMPLETED} of {TOTAL_SUBMITTED} submitted). "
-        f"Average time to completion: {AVG_DAYS} days."
-    )
-    hist = Paragraph(hist_text, hist_style)
-    hw, hh = hist.wrap(UW, 30)
-    hist.drawOn(c, ML, y - hh)
-    y -= hh + 10 * mm
-    
+
+    if TOTAL_COMPLETED == 0:
+        c.drawString(ML, y, "Insufficient historical data to model a completion timeline (no completed applications yet).")
+        y -= 12 * mm
+        # Skip chart — jump straight to forecast
+    else:
+        c.drawString(ML, y, f"Based on your historical completion pattern across {TOTAL_COMPLETED} applications:")
+
+        # Chart
+        y -= 5 * mm
+        chart_path = output_path.replace(".pdf", "_chart.png")
+        build_completion_chart(chart_path)
+
+        chart_h = 62 * mm
+        c.drawImage(chart_path, ML - 2 * mm, y - chart_h, width=UW + 4 * mm, height=chart_h,
+                    preserveAspectRatio=True, anchor="nw")
+        y -= chart_h + 6 * mm
+
+        # Historical summary line (italic)
+        hist_style = ParagraphStyle("hist", fontName="Helvetica-Oblique", fontSize=10,
+                                     leading=13, textColor=colors.HexColor(BODY_TEXT))
+        avg_days_str = f"{AVG_DAYS} days" if AVG_DAYS > 0 else "N/A"
+        hist_text = (
+            f"Historical completion rate: {COMPLETION_RATE}% "
+            f"({TOTAL_COMPLETED} of {TOTAL_SUBMITTED} submitted). "
+            f"Average time to completion: {avg_days_str}."
+        )
+        hist = Paragraph(hist_text, hist_style)
+        hw, hh = hist.wrap(UW, 30)
+        hist.drawOn(c, ML, y - hh)
+        y -= hh + 10 * mm
+
     # ── Forecast section ──
     c.setFont("Helvetica-Bold", 12)
     c.setFillColor(colors.HexColor(NAVY))
@@ -179,6 +186,7 @@ def draw_section8(output_path):
     c.drawCentredString(W / 2, 18 * mm, f"SLG | Axis CRM Intelligence | Page {8 - (0 if getattr(cfg, 'HAS_PAGE6', True) else 1)} of {cfg.TOTAL_PAGES} | Version 1.0.0")
     
     c.save()
+    chart_path = output_path.replace(".pdf", "_chart.png")
     if os.path.exists(chart_path):
         os.remove(chart_path)
     return output_path

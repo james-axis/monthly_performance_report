@@ -15,6 +15,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import ParagraphStyle
 import report_config as cfg
+from reportlab.pdfbase import pdfmetrics
 
 W, H = A4
 ML = 28 * mm
@@ -48,22 +49,21 @@ INPROGRESS_PREM = sum(a["prem"] for a in APPS if a["status"] in ("In Progress", 
 PAGE1_ROWS = 10  # First page rows
 
 
+def clip_str(text, max_pts, font_name="Helvetica", font_size=8.5):
+    """Truncate text with ellipsis if it exceeds max_pts width."""
+    if pdfmetrics.stringWidth(text, font_name, font_size) <= max_pts:
+        return text
+    ellipsis = "…"
+    while text and pdfmetrics.stringWidth(text + ellipsis, font_name, font_size) > max_pts:
+        text = text[:-1]
+    return text + ellipsis
+
+
 def build_donut_chart(output_path):
     """Insurer diversification donut chart."""
-    # Reorder to spread small segments apart
-    chart_data = [
-        ("Acenda",    7, "#181D27"),
-        ("OnePath",   1, "#E9EAEB"),
-        ("MetLife",   3, "#717680"),
-        ("ClearView", 1, "#F5F5F5"),
-        ("Futura",    1, "#E9EAEB"),
-        ("Encompass", 5, "#414651"),
-        ("TAL",       5, "#535862"),
-        ("Zurich",    5, "#A4A7AE"),
-    ]
-    labels = [d[0] for d in chart_data]
-    sizes = [d[1] for d in chart_data]
-    clrs = [d[2] for d in chart_data]
+    labels = [name for name, cnt, clr in INSURERS]
+    sizes = [cnt for name, cnt, clr in INSURERS]
+    clrs = [clr for name, cnt, clr in INSURERS]
     total = sum(sizes)
     
     fig, ax = plt.subplots(figsize=(8, 7))
@@ -129,10 +129,13 @@ def draw_table_rows(c, apps_slice, start_y, table_x, col_widths, row_h):
             font = "Helvetica"
             txt_color = colors.HexColor(BODY_TEXT)
         
-        vals = [app["client"], prem_str, app["insurer"], app["status"], app["products"], app["date"]]
+        raw_vals = [app["client"], prem_str, app["insurer"], app["status"], app["products"], app["date"]]
+        padding = 4 * mm  # 2mm left + 2mm right buffer
+        fn = font if app["green"] else "Helvetica"
+        vals = [clip_str(v, col_widths[j] - padding, fn, 8.5) for j, v in enumerate(raw_vals)]
         cx = table_x
         for j, val in enumerate(vals):
-            c.setFont(font if app["green"] else "Helvetica", 8.5)
+            c.setFont(fn, 8.5)
             c.setFillColor(txt_color)
             if j == 0:
                 c.drawString(cx + 2 * mm, row_y + 2.2 * mm, val)
@@ -167,7 +170,7 @@ def draw_table_header(c, y, table_x, col_widths, row_h):
 def draw_section5(output_path):
     c = canvas.Canvas(output_path, pagesize=A4)
     
-    col_widths = [UW * 0.22, UW * 0.11, UW * 0.14, UW * 0.17, UW * 0.24, UW * 0.12]
+    col_widths = [UW * 0.28, UW * 0.11, UW * 0.14, UW * 0.14, UW * 0.21, UW * 0.12]
     row_h = 6.5 * mm
     table_x = ML
     
@@ -212,7 +215,7 @@ def draw_section5(output_path):
     # ── February Submissions heading ──
     c.setFont("Helvetica-Bold", 16)
     c.setFillColor(colors.HexColor(NAVY))
-    c.drawString(ML, y, "6. February Submissions \u2013 Full Detail")
+    c.drawString(ML, y, f"6. {cfg.REPORT_MONTH_NAME} Submissions \u2013 Full Detail")
 
     y -= 4 * mm
     c.setStrokeColor(colors.HexColor("#E9EAEB"))
